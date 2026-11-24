@@ -1,0 +1,189 @@
+@startuml
+title PayLink - Database ER Diagram (requirements-aligned logical model)
+hide circle
+skinparam linetype ortho
+
+entity "users" as users {
+  * id : UUID <<PK>>
+  --
+  full_name : VARCHAR
+  phone : VARCHAR <<UQ>>
+  role : VARCHAR
+  verification_level : VARCHAR
+  account_status : VARCHAR
+}
+entity "wallets" as wallets {
+  * id : UUID <<PK>>
+  --
+  owner_user_id : UUID <<FK,UQ>>
+  currency : CHAR(3)
+}
+entity "ledger_entries" as ledger {
+  * id : UUID <<PK>>
+  --
+  wallet_id : UUID <<FK>>
+  payment_id : UUID <<FK, nullable>>
+  entry_type : VARCHAR
+  amount : DECIMAL(12,2)
+  created_at : TIMESTAMP
+  reference : VARCHAR
+}
+entity "billers" as billers {
+  * id : UUID <<PK>>
+  --
+  name : VARCHAR
+  protocol : VARCHAR
+  active : BOOLEAN
+}
+entity "services" as services {
+  * id : UUID <<PK>>
+  --
+  biller_id : UUID <<FK>>
+  name : VARCHAR
+  required_fields : JSON
+  min_amount : DECIMAL(12,2)
+  max_amount : DECIMAL(12,2)
+  active : BOOLEAN
+}
+entity "fee_rules" as fees {
+  * id : UUID <<PK>>
+  --
+  service_id : UUID <<FK>>
+  rule_type : VARCHAR
+  value : DECIMAL(12,2)
+  minimum_fee : DECIMAL(12,2)
+  tiers : JSON
+  valid_from : TIMESTAMP
+  valid_to : TIMESTAMP
+}
+entity "promotions" as promos {
+  * id : UUID <<PK>>
+  --
+  biller_id : UUID <<FK>>
+  fee_override : DECIMAL(12,2)
+  start_at : TIMESTAMP
+  end_at : TIMESTAMP
+}
+entity "payments" as payments {
+  * id : UUID <<PK>>
+  --
+  customer_id : UUID <<FK>>
+  agent_id : UUID <<FK, nullable>>
+  service_id : UUID <<FK>>
+  reference : VARCHAR <<UQ>>
+  idempotency_key : VARCHAR
+  bill_amount : DECIMAL(12,2)
+  fee_amount : DECIMAL(12,2)
+  total_amount : DECIMAL(12,2)
+  status : VARCHAR
+  biller_reference : VARCHAR
+  created_at : TIMESTAMP
+}
+entity "payment_events" as events {
+  * id : UUID <<PK>>
+  --
+  payment_id : UUID <<FK>>
+  old_state : VARCHAR
+  new_state : VARCHAR
+  occurred_at : TIMESTAMP
+}
+entity "refunds" as refunds {
+  * id : UUID <<PK>>
+  --
+  payment_id : UUID <<FK>>
+  requested_by : UUID <<FK>>
+  reviewed_by : UUID <<FK, nullable>>
+  reason : TEXT
+  status : VARCHAR
+  requested_at : TIMESTAMP
+}
+entity "commissions" as commissions {
+  * id : UUID <<PK>>
+  --
+  payment_id : UUID <<FK,UQ>>
+  agent_id : UUID <<FK>>
+  amount : DECIMAL(12,2)
+  created_at : TIMESTAMP
+}
+entity "notification_logs" as notifications {
+  * id : UUID <<PK>>
+  --
+  payment_id : UUID <<FK>>
+  channel : VARCHAR
+  status : VARCHAR
+  attempt_count : INTEGER
+  last_attempt_at : TIMESTAMP
+}
+entity "audit_logs" as audit {
+  * id : UUID <<PK>>
+  --
+  actor_id : UUID <<FK, nullable>>
+  ledger_entry_id : UUID <<FK, nullable>>
+  action : VARCHAR
+  reason : TEXT
+  old_value : TEXT
+  new_value : TEXT
+  amount : DECIMAL(12,2)
+  created_at : TIMESTAMP
+}
+entity "reconciliation_records" as reconciliation {
+  * id : UUID <<PK>>
+  --
+  payment_id : UUID <<FK>>
+  biller_reference : VARCHAR
+  outcome : VARCHAR
+  checked_at : TIMESTAMP
+}
+entity "account_blocks" as blocks {
+  * id : UUID <<PK>>
+  --
+  user_id : UUID <<FK>>
+  reason : TEXT
+  blocked_at : TIMESTAMP
+  expires_at : TIMESTAMP
+  released_at : TIMESTAMP
+}
+entity "daily_limits" as limits {
+  * id : UUID <<PK>>
+  --
+  verification_level : VARCHAR
+  single_payment_limit : DECIMAL(12,2)
+  daily_limit : DECIMAL(12,2)
+  effective_from : TIMESTAMP
+}
+
+users ||--|| wallets : owns
+wallets ||--o{ ledger : records
+users ||--o{ payments : customer
+users |o--o{ payments : agent source
+services ||--o{ payments : used by
+billers ||--o{ services : offers
+services ||--o{ fees : fee configuration
+billers ||--o{ promos : promotions
+payments ||--o{ events : state history
+payments ||--o{ ledger : related movements
+payments ||--o{ refunds : refund requests
+users ||--o{ refunds : requests / reviews
+payments ||--o| commissions : earns on completion
+users ||--o{ commissions : agent
+payments ||--o{ notifications : notification attempts
+users |o--o{ audit : actor
+ledger |o--o{ audit : audited movement
+payments ||--o{ reconciliation : checked by
+users ||--o{ blocks : blocked account
+limits }o..|| users : verification level rule
+
+note bottom of wallets
+  Available and held balances are derived from
+  immutable ledger entries; do not overwrite balances.
+end note
+note bottom of payments
+  Store bill amount, fee and total separately.
+  Persist idempotency key with a uniqueness rule
+  scoped to the submitting account.
+end note
+note bottom of refunds
+  Completed payment remains Completed.
+  Refund is a separate workflow/record.
+end note
+@enduml

@@ -1,0 +1,58 @@
+@startuml
+title PayLink - Failed Payment Release and Completed-Payment Refund Request
+autonumber
+actor Customer
+actor "Support Employee" as Support
+participant "PayLink API" as API
+participant "Payment / Refund Service" as Service
+participant "Wallet / Ledger" as Wallet
+participant "Payment Event / Audit" as Audit
+participant "Notification Service" as Notify
+
+== Automatic release after a failed bill payment ==
+Service -> Wallet: release held funds (HOLD_RELEASE)
+Wallet --> Service: funds returned to available balance
+Service -> Audit: record ledger movement and audit record
+Service -> Service: Payment Failed -> Refunded
+Service -> Audit: record PaymentEvent
+Service -> Notify: send failure SMS
+
+note over Service,Wallet
+This flow applies when the biller confirms failure.
+An Unknown payment is NOT refunded automatically.
+Its funds remain held until a later callback
+or reconciliation establishes the outcome.
+end note
+
+== Customer requests refund for a Completed payment ==
+Customer -> API: request refund(payment reference, reason)
+API -> Service: create refund request
+Service -> Service: verify payment is Completed
+Service -> Service: create Refund(status=Pending)
+Service -> Audit: audit refund request
+Service -> Notify: notify support
+Service --> API: pending refund reference
+API --> Customer: request received
+
+Support -> API: approve or reject refund
+API -> Service: review pending refund
+alt Approved
+  Service -> Wallet: create REFUND ledger entry\nfor approved amount
+  Wallet --> Service: refund credited
+  Service -> Audit: audit money movement and approval
+  Service -> Service: Refund.status = Approved
+  note right of Service
+    Original Payment remains Completed.
+    Refund is a separate record and does
+    not change the Payment state.
+  end note
+  Service -> Notify: notify customer of approval
+  Service --> API: approved
+else Rejected
+  Service -> Service: Refund.status = Rejected
+  Service -> Audit: audit rejection and reason
+  Service -> Notify: notify customer of rejection
+  Service --> API: rejected; no money moved
+end
+API --> Customer: refund decision
+@enduml

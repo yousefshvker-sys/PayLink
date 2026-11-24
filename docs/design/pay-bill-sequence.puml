@@ -1,1 +1,98 @@
+@startuml
+title PayLink - Bill Inquiry and Payment Sequence (FR-6 to FR-15)
+autonumber
+actor Customer
+actor Agent
+participant "PayLink API" as API
+participant "Payment Service" as PS
+participant "Idempotency Store" as Idem
+participant "Velocity / Limits" as Rules
+participant "Fee Service" as Fees
+participant "Wallet / Ledger" as Wallet
+participant "Biller Integration" as Adapter
+participant "External Biller" as Biller
+participant "Payment Event / Audit" as Audit
+participant "Notification Service" as Notify
 
+== Bill inquiry ==
+Customer -> API: inquire(service, required fields)
+API -> Adapter: inquire bill
+Adapter -> Biller: bill inquiry (provider protocol)
+Biller --> Adapter: bill amount / error
+Adapter --> API: normalized bill result
+API --> Customer: amount + fee + total OR not found/unavailable
+note over Adapter,Biller
+ElectroCo: REST/JSON immediate response
+AquaCo: SOAP-style XML over HTTP
+TopUpNet: REST/JSON; payment result is asynchronous
+end note
+
+== Payment ==
+Customer -> API: confirm payment(amount, idempotency key)
+opt Agent submits on behalf of customer
+  Agent -> API: submit payment for customer
+end
+API -> PS: create payment
+PS -> Idem: find key
+alt Key already processed
+  Idem --> PS: original result
+  PS --> API: return original result (no second charge)
+  API --> Customer: original payment result
+else New key
+  PS -> Rules: validate account, velocity,\nsingle and daily limits
+  alt Rejected by rule
+    Rules --> PS: rejection reason
+    PS -> Audit: record rejection/action
+    PS --> API: Rejected
+    API --> Customer: reason
+  else Rules pass
+    PS -> Fees: calculate fee using configured rule\n(promotion fee fixed at creation)
+    Fees --> PS: fee and total
+    PS -> Wallet: hold total amount
+    alt Insufficient funds
+      Wallet --> PS: hold refused
+      PS --> API: Rejected - insufficient funds
+      API --> Customer: rejection
+    else Hold succeeds
+      Wallet --> PS: HOLD ledger entry
+      PS -> Audit: record money movement
+      PS -> Audit: record FundsHeld PaymentEvent
+      PS -> Adapter: submit payment
+      Adapter -> Biller: payment request
+      PS -> Audit: record SentToBiller event
+      alt Immediate biller success
+        Biller --> Adapter: paid
+        Adapter --> PS: success
+        PS -> Wallet: capture hold as CHARGE\nand credit FEE_INCOME
+        PS -> Audit: record Completed event and audit entries
+        opt Agent-originated payment
+          PS -> Wallet: credit agent COMMISSION (40% of fee)
+        end
+        PS -> Notify: send SMS + push receipt
+        PS --> API: Completed
+        API --> Customer: receipt
+      else Biller refuses
+        Biller --> Adapter: refused
+        Adapter --> PS: failed + normalized reason
+        PS -> Wallet: release hold (HOLD_RELEASE)
+        PS -> Audit: record Failed then Refunded events\nand audit entries
+        PS -> Notify: send failure SMS
+        PS --> API: Failed / funds released
+        API --> Customer: failure reason
+      else No answer after 10 seconds
+        Adapter --> PS: timeout
+        PS -> Audit: record Unknown event
+        note right of PS
+          Funds remain held.
+          Re-query after 1, 5 and 15 minutes.
+          After 3 unanswered re-queries, keep
+          Unknown and wait for callback/reconciliation.
+          Never auto-refund Unknown.
+        end note
+        PS --> API: Unknown - processing
+        API --> Customer: payment is being processed
+      end
+    end
+  end
+end
+@enduml

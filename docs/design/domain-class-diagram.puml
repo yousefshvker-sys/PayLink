@@ -1,0 +1,225 @@
+@startuml
+title PayLink - Domain Class Diagram (aligned with FR-1 to FR-25)
+skinparam classAttributeIconSize 0
+hide empty methods
+
+abstract class User {
+  +id: UUID
+  +fullName: String
+  +phone: String
+  +role: UserRole
+  +status: AccountStatus
+}
+class Customer {
+  +verificationLevel: VerificationLevel
+  +requestRefund(paymentRef, reason)
+}
+class Agent {
+  +agentCode: String
+  +submitCustomerTopUp(customer, amount)
+  +payOnBehalf(customer, bill)
+}
+class Administrator {
+  +manageBillers()
+  +editFeesAndLimits()
+  +viewDailyTotals()
+}
+class SupportEmployee {
+  +blockAccount(user, reason)
+  +unblockAccount(user)
+  +reviewRefund(refund)
+  +searchPayment(reference)
+}
+User <|-- Customer
+User <|-- Agent
+User <|-- Administrator
+User <|-- SupportEmployee
+
+class Wallet {
+  +id: UUID
+  +currency: String = EGP
+  +getAvailableBalance(): Decimal
+  +getHeldBalance(): Decimal
+}
+class LedgerEntry {
+  +id: UUID
+  +entryType: LedgerEntryType
+  +amount: Decimal
+  +createdAt: DateTime
+  +reference: String
+  +immutable: Boolean
+}
+class Payment {
+  +id: UUID
+  +reference: String
+  +idempotencyKey: String
+  +billAmount: Decimal
+  +feeAmount: Decimal
+  +totalAmount: Decimal
+  +status: PaymentStatus
+  +createdAt: DateTime
+  +transitionTo(newStatus)
+}
+class PaymentEvent {
+  +id: UUID
+  +oldState: PaymentStatus
+  +newState: PaymentStatus
+  +occurredAt: DateTime
+}
+class Refund {
+  +id: UUID
+  +reason: String
+  +status: RefundStatus
+  +requestedAt: DateTime
+  +reviewedAt: DateTime
+}
+class Biller {
+  +id: UUID
+  +name: String
+  +protocol: BillerProtocol
+  +active: Boolean
+}
+class Service {
+  +id: UUID
+  +name: String
+  +requiredFields: JSON
+  +minAmount: Decimal
+  +maxAmount: Decimal
+  +active: Boolean
+}
+class FeeRule {
+  +id: UUID
+  +ruleType: FeeRuleType
+  +value: Decimal
+  +minimumFee: Decimal
+  +validFrom: DateTime
+  +validTo: DateTime
+}
+class Promotion {
+  +id: UUID
+  +feeOverride: Decimal
+  +startAt: DateTime
+  +endAt: DateTime
+}
+class Commission {
+  +id: UUID
+  +amount: Decimal
+  +createdAt: DateTime
+}
+class NotificationLog {
+  +id: UUID
+  +channel: NotificationChannel
+  +status: NotificationStatus
+  +attemptCount: Integer
+}
+class AuditLog {
+  +id: UUID
+  +actorId: UUID
+  +action: String
+  +reason: String
+  +oldValue: String
+  +newValue: String
+  +createdAt: DateTime
+  +immutable: Boolean
+}
+class ReconciliationRecord {
+  +id: UUID
+  +billerReference: String
+  +outcome: String
+  +checkedAt: DateTime
+}
+class AccountBlock {
+  +id: UUID
+  +reason: String
+  +blockedAt: DateTime
+  +expiresAt: DateTime
+}
+class DailyLimit {
+  +id: UUID
+  +verificationLevel: VerificationLevel
+  +singlePaymentLimit: Decimal
+  +dailyLimit: Decimal
+}
+
+enum PaymentStatus {
+  Initiated
+  FundsHeld
+  SentToBiller
+  Unknown
+  Completed
+  Failed
+  Rejected
+  Refunded
+}
+enum LedgerEntryType {
+  TOPUP
+  HOLD
+  HOLD_RELEASE
+  CHARGE
+  FEE_INCOME
+  COMMISSION
+  REFUND
+}
+enum RefundStatus {
+  Pending
+  Approved
+  Rejected
+}
+enum AccountStatus {
+  Active
+  Blocked
+}
+enum VerificationLevel {
+  Basic
+  Verified
+}
+enum BillerProtocol {
+  REST_JSON
+  SOAP_XML
+  ASYNC_CALLBACK
+}
+enum FeeRuleType {
+  Fixed
+  Percentage
+  Tiered
+}
+enum NotificationChannel {
+  SMS
+  Push
+  Email
+}
+enum NotificationStatus {
+  Pending
+  Sent
+  Undelivered
+}
+enum UserRole {
+  Customer
+  Agent
+  Admin
+  Support
+}
+
+User "1" -- "1" Wallet : owns
+Wallet "1" -- "0..*" LedgerEntry : entries
+Customer "1" -- "0..*" Payment : makes
+Agent "0..1" -- "0..*" Payment : source agent
+Payment "1" -- "1..*" PaymentEvent : state history
+Payment "1" -- "0..*" LedgerEntry : money movements
+Payment "1" -- "0..*" NotificationLog
+Payment "1" -- "0..*" Refund : refund requests
+Payment "1" -- "0..1" Commission
+Agent "1" -- "0..*" Commission : earns
+Biller "1" -- "1..*" Service
+Service "1" -- "0..*" Payment
+Service "1" -- "0..*" FeeRule
+Biller "1" -- "0..*" Promotion
+Payment "1" -- "0..*" ReconciliationRecord
+User "1" -- "0..*" AuditLog : actions
+User "1" -- "0..*" AccountBlock
+DailyLimit ..> VerificationLevel
+Administrator ..> Biller : manages
+Administrator ..> FeeRule : configures
+SupportEmployee ..> Refund : reviews
+SupportEmployee ..> Payment : investigates
+@enduml

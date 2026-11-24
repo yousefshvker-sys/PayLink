@@ -1,0 +1,88 @@
+@startuml
+title PayLink - Use Case Diagram (FR-1 to FR-25)
+left to right direction
+skinparam actorStyle stickman
+skinparam packageStyle rectangle
+
+actor Customer
+actor Agent
+actor Administrator as Admin
+actor "Support Employee" as Support
+actor "Biller Company" as Biller
+actor "SMS / Push Provider" as Provider
+actor Management
+
+rectangle "PayLink Backend System" {
+  usecase "Register account" as UC1
+  usecase "View wallet balance and\ntransaction history" as UC2
+  usecase "Top up wallet by\nsimulated card" as UC3
+  usecase "Top up customer wallet\nby agent cash" as UC4
+  usecase "Browse active billers,\nservices and required fields" as UC5
+  usecase "Inquire about bill:\namount, fee and total" as UC6
+  usecase "Pay bill from wallet" as UC7
+  usecase "Pay bill on behalf\nof customer" as UC8
+  usecase "Check idempotency,\nlimits and velocity" as UC9
+  usecase "Calculate fee and\npromotion" as UC10
+  usecase "Hold funds and write\nledger entries" as UC11
+  usecase "Send payment to biller" as UC12
+  usecase "Receive biller callback" as UC13
+  usecase "Retry or reconcile\nUnknown payment" as UC14
+  usecase "Request refund for\ncompleted payment" as UC15
+  usecase "Approve or reject\nrefund request" as UC16
+  usecase "Manage billers\nand services" as UC17
+  usecase "Manage fees, promotions\nand limits" as UC18
+  usecase "Block or unblock account" as UC19
+  usecase "Search payment and\nview full history" as UC20
+  usecase "View daily totals" as UC21
+  usecase "Send completion or\nfailure notifications" as UC22
+  usecase "Retry failed notifications" as UC23
+  usecase "Record audit log and\npayment event history" as UC24
+}
+
+Customer --> UC1
+Customer --> UC2
+Customer --> UC3
+Customer --> UC5
+Customer --> UC6
+Customer --> UC7
+Customer --> UC15
+
+Agent --> UC4
+Agent --> UC8
+
+Admin --> UC17
+Admin --> UC18
+Admin --> UC21
+
+Support --> UC16
+Support --> UC19
+Support --> UC20
+
+Biller --> UC12
+Biller --> UC13
+Provider --> UC22
+Provider --> UC23
+Management --> UC21
+
+UC7 ..> UC9 : <<include>>
+UC7 ..> UC10 : <<include>>
+UC7 ..> UC11 : <<include>>
+UC7 ..> UC12 : <<include>>
+UC8 ..> UC7 : <<include>>
+UC12 ..> UC13 : <<extend>>
+UC14 ..> UC12 : <<extend>>
+UC16 ..> UC15 : <<include>>
+UC22 ..> UC23 : <<extend>>
+UC3 ..> UC24 : <<include>>
+UC4 ..> UC24 : <<include>>
+UC7 ..> UC24 : <<include>>
+UC16 ..> UC24 : <<include>>
+UC17 ..> UC24 : <<include>>
+UC18 ..> UC24 : <<include>>
+UC19 ..> UC24 : <<include>>
+
+note bottom
+  A refund request for a Completed payment creates a separate Refund record.
+  The original Payment remains Completed.
+end note
+@enduml

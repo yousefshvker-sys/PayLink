@@ -1,0 +1,45 @@
+@startuml
+title PayLink - Payment State Diagram (FR-10 to FR-13)
+[*] --> Initiated
+
+Initiated --> Rejected : validation fails / insufficient funds
+Initiated --> FundsHeld : checks pass and hold succeeds
+FundsHeld --> SentToBiller : biller request sent
+
+SentToBiller --> Completed : biller confirms paid
+SentToBiller --> Failed : biller refuses
+SentToBiller --> Unknown : no response within 10 seconds
+
+Unknown --> Completed : later callback / re-query says paid
+Unknown --> Failed : later callback / re-query says refused
+Unknown --> Unknown : no answer after 1, 5 and 15 minute re-queries\nkeep funds held; wait for callback/reconciliation
+
+Failed --> Refunded : release held funds
+
+Completed --> [*]
+Rejected --> [*]
+Refunded --> [*]
+
+note right of Failed
+  Failure release is recorded in the ledger.
+  The brief's lifecycle then records Refunded.
+end note
+
+note right of Unknown
+  Never refund automatically.
+  Hold remains in place until the outcome
+  is known from callback or reconciliation.
+end note
+
+note bottom of Completed
+  Final Payment state.
+  A customer refund request creates a separate
+  Refund record; Payment stays Completed.
+end note
+note bottom of Rejected
+  Final state.
+end note
+note bottom of Refunded
+  Final state.
+end note
+@enduml
